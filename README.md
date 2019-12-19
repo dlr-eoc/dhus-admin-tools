@@ -42,7 +42,7 @@ USAGE:
 
 #### Example
 ```
-./dhus-gapfill.sh -d=2019-12-18 -c="startswith(Name,'S2') and substringof('_MSIL1C_',Name)"  --rc1=.apihubrc --dhus2=https://dehub.dlr.de/s2hub --rc2=.dehubrc -g=_s2_gapsync --wait
+./dhus-gapfill.sh -d=2019-12-18 -c="startswith(Name,'S2') and substringof('_MSIL1C_',Name)" --dhus1 https://colhub.coperncius.eu/dhus --rc1=.colhubrc --dhus2=https://dehub.dlr.de/s2hub --rc2=.dehubrc -g=_s2_gapsync --wait
 ```
 The ```.*rc``` files contain single lines for the user=xxx and password=yyy to query the DHuS instances.
 
