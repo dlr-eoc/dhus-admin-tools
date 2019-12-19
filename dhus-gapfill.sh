@@ -76,12 +76,12 @@ alias printarray="printf -- '%s\n'"
 # temporary files
 tmpdir=/tmp
 scriptname=${0##*/}
-list1=$tmpdir/${scriptname}_list1 ##_$$
-list2=$tmpdir/${scriptname}_list2 ##_$$
-ids1=$tmpdir/${scriptname}_ids1   ##_$$
-ids2=$tmpdir/${scriptname}_ids2   ##_$$
-missing=$tmpdir/${scriptname}_missing ##_$$
-syncfile=$tmpdir/${scriptname}_synchronizer ##_$$
+list1=$tmpdir/${scriptname}_list1_$$
+list2=$tmpdir/${scriptname}_list2_$$
+ids1=$tmpdir/${scriptname}_ids1_$$
+ids2=$tmpdir/${scriptname}_ids2_$$
+missing=$tmpdir/${scriptname}_missing_$$
+syncfile=$tmpdir/${scriptname}_synchronizer_$$
 # cleanup after exit
 trap "log "cleanup"; rm -f $list1 $list2 $ids1 $ids2 $missing $syncfile | true" EXIT
   
