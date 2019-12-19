@@ -20,10 +20,12 @@ then queries local DHuS detects missing products,
 creates or updates a named synchronizer with the first 10 product IDs, 
 starts it and waits for its completion.
 
+The script is intended to be run in a cronjob to complete any misses in the previous day.
+
 ```
 USAGE:
 
-./dhus-gapfill.sh -c|--condition=... --dhus1=https://scihub.copernicus.eu/apihub --rc1=/path/to/.wgetrc1 --dhus2=http://localhost:8080 --rc2=/path/to/.wgetrc2 [-d|date=2019-12-18] [-g|--name=gap-synchronizer-name] [-q|--quiet] [-w|--wait] [-r|--remove]
+./dhus-gapfill.sh -c|--condition=... --dhus1=https://scihub.copernicus.eu/apihub --rc1=/path/to/.wgetrc1 --dhus2=http://localhost:8080 --rc2=/path/to/.wgetrc2 [-d|queryDate=2019-12-18] [-g|--name=gap-synchronizer-name] [-q|--quiet] [-w|--wait] [-r|--remove]
   --condition is the full OData query, examples for each sentinel mission:
     -c="startswith(Name,'S1') and not substringof('_RAW_',Name)"
     -c="startswith(Name,'S2') and substringof('_MSIL1C_',Name)"
@@ -38,18 +40,21 @@ USAGE:
   --quiet avoids progress output to stderr
 ```
 
-
 #### Example
 ```
-./dhus-gapfill.sh -d=2019-12-$d -c="startswith(Name,'S2') and substringof('_MSIL1C_',Name)"  --rc1=.apihubrc --dhus2=https://dehub.dlr.de/s2hub --rc2=.dehubrc -g=_s2_gapsync --wait
+./dhus-gapfill.sh -d=2019-12-18 -c="startswith(Name,'S2') and substringof('_MSIL1C_',Name)"  --rc1=.apihubrc --dhus2=https://dehub.dlr.de/s2hub --rc2=.dehubrc -g=_s2_gapsync --wait
 ```
 The ```.*rc``` files contain single lines for the user=xxx and password=yyy to query the DHuS instances.
 
-
-#### dhus-inventory.sh
+### dhus-inventory.sh
 
 Used internally by dhus-gapfill.sh to query the product list (catalogue view) form a DhuS.
 
+### TODO
+
+* refactor-out the schnronizer part into its own script, such that it can be fed with a catalogview in csv list.
+* allow looping avor more than 10 products at once.
+* possibly reporting duplicates automatically into an EDR issue.
 
 ## Change History
 2019-12-19 Initial commit
