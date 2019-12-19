@@ -55,6 +55,7 @@ Used internally by dhus-gapfill.sh to query the product list (catalogue view) fo
 * refactor-out the schnronizer part into its own script, such that it can be fed with a catalogview in csv list.
 * allow looping avor more than 10 products at once.
 * possibly reporting duplicates automatically into an EDR issue.
+* change to use curl instead of wget 1.19 (which requires .netrc formated credentials)
 
 ## Change History
 2019-12-19 Initial commit
@@ -64,7 +65,7 @@ Used internally by dhus-gapfill.sh to query the product list (catalogue view) fo
 
 Download the script package to a local unix directory.
 Currently these should be called 
-The scripts require bash, wget, curl and a few common shell utilities.
+The scripts require bash, wget (version 1.19 or newer), curl and a few common shell utilities.
 
 ## License
 
