@@ -4,7 +4,7 @@ export TZ=UTC
 function usage {
   >&2 echo "This script will compare the products ingested for one day in two DataHubs and will "
   >&2 echo "USAGE:"
-  >&2 echo "$0 -c|--condition=... --dhus1=$dhus1 --rc1=/path/to/.wgetrc1 --dhus2=$dhus2 --rc2=/path/to/.wgetrc2 [-d|date=$queryDate] [-g|--name=gap-synchronizer-name] [-q|--quiet] [-w|--wait] [-r|--remove]"
+  >&2 echo "$0 -c|--condition=... --dhus1=$dhus1 --rc1=/path/to/.wgetrc1 --dhus2=$dhus2 --rc2=/path/to/.wgetrc2 [-d|date=$queryDate] [-g|--name=gap-synchronizer-name] [-k|--keeplists] [-w|--wait] [-r|--remove]"
   >&2 echo "  --condition is the full OData query, examples for each sentinel mission:"
   >&2 echo "    -c=\"startswith(Name,'S1') and not substringof('_RAW_',Name)\""
   >&2 echo "    -c=\"startswith(Name,'S2') and substringof('_MSIL1C_',Name)\""
@@ -16,7 +16,7 @@ function usage {
   >&2 echo "  -g|--name of the synchronizer used to fill the gaps"
   >&2 echo "  --wait for completion"
   >&2 echo "  --remove synchronizer after completion (implicit --wait)"
-  >&2 echo "  --quiet avoids progress output to stderr" 
+  >&2 echo "  --keep identifier lists after completion" 
   >&2 echo ""
   exit 1;
 }
@@ -29,24 +29,26 @@ rc1=.wgetrc1
 dhus2="http://localhost:8080"
 rc2=.wgetrc2
 queryDate="$(date +%Y-%m-%d --date='1 day ago')"
+dayonly=false
 batchsize=100
 wait=false;
 remove=false;
-gapsynch="gap_synch"
+gapsync="_gap_sync"
+keeplists=false
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
     -c|--condition) condition="$2"; shift 2;;
     -d|--queryDate) queryDate="$2"; shift 2;;
-    -g|--name)      gapsynch="$2"; shift 2;;
+    -g|--name)      gapsync="$2"; shift 2;;
     --dhus1)        dhus1="$2"; shift 2;;
     --dhus2)        dhus2="$2"; shift 2;;
     --rc1)          rc1="$2"; shift 2;;
     --rc2)          rc2="$2"; shift 2;;
 
     -c=*|--condition=*) condition="${1#*=}"; shift 1;;
-    -d=*|--queryDate=*) queryDate="${1#*=}"; shift 1;;
-    -g=*|--name=*)  gapsynch="${1#*=}"; shift 1;;
+    -d=*|--queryDate=*) queryDate="${1#*=}"; dayonly=true; shift 1;;
+    -g=*|--name=*)  gapsync="${1#*=}"; shift 1;;
     --dhus1=*)      dhus1="${1#*=}"; shift 1;;
     --dhus2=*)      dhus2="${1#*=}"; shift 1;;
     --rc1=*)        rc1="${1#*=}"; shift 1;;
@@ -54,7 +56,7 @@ while [ "$#" -gt 0 ]; do
 
     -w|--wait)      wait=true; shift 1;;
     -r|--remove)    remove=true; wait=true; shift 1;;
-    -q|--quiet)     quiet=true; shift 1;;
+    -k|--keeplists) keep=true; shift 1;;
 
     *) echo "ERROR: unknown option '$1'"; usage; exit;;
   esac
@@ -69,10 +71,6 @@ function logerr() {
   cat <<< "$(date +%Y-%m-%dT%H:%M:%SZ) ERROR ${BASH_SOURCE[1]##*/} $@" >&2
 }
 
-## simplify using arrays in the schell script
-shopt -s expand_aliases
-alias printarray="printf -- '%s\n'"
-
 # temporary files
 tmpdir=/tmp
 scriptname=${0##*/}
@@ -83,7 +81,7 @@ ids2=$tmpdir/${scriptname}_ids2_$$
 missing=$tmpdir/${scriptname}_missing_$$
 syncfile=$tmpdir/${scriptname}_synchronizer_$$
 # cleanup after exit
-trap "log "cleanup"; rm -f $list1 $list2 $ids1 $ids2 $missing $syncfile | true" EXIT
+trap "log "cleanup"; if [[ "$remove" == "false" ]]; then rm -f $list1 $list2; fi; rm -f $ids1 $ids2 $missing $syncfile | true" EXIT
   
 if [ "$condition" == "" ]; then
   logerr "no condition defined!"
@@ -91,7 +89,11 @@ if [ "$condition" == "" ]; then
   usage
   exit 1
 fi
-condition="$condition and CreationDate ge datetime'${queryDate}T00:00:00.000' and ContentDate/Start ge datetime'${queryDate}T00:00:00.000' and ContentDate/Start le datetime'${queryDate}T23:59:59.999'"
+condition="$condition and CreationDate ge datetime'${queryDate}T00:00:00.000' and ContentDate/Start le datetime'${queryDate}T23:59:59.999'"
+if [[ $dayonly == "true" ]]; then
+  condition="$condition and ContentDate/Start ge datetime'${queryDate}T00:00:00.000'" 
+  # otherwise also allows synchronizing gaps at earlier dates of data arriving the day before    
+fi
 log "Comparing with condition:"
 log "  $condition"
 
@@ -134,24 +136,24 @@ firstCreationdate="$(cut -d, -f4 $missing |sort |head -1 | cut -dT -f1)T00:00:00
 lastCreationdate=$(cut -d, -f4 $missing |sort -r |head -1 |tr -d '\n\r')
 
 export WGETRC=$rc2
-if [ $(cat $missing | wc -l) > 0 ]; then
+if [[ $(cat $missing | wc -l) > 0 ]]; then
+  log "synchronizing $(cat $missing | wc -l) missing products"
   filter=$(head $missing | cut -d, -f2 | xargs -n1 -I% echo -n "or Name eq '%' " | sed -e 's/^or /(/'; echo ')' )  
   user=$(grep user $rc1 | cut -d= -f2)
   pass=$(grep pass $rc1 | cut -d= -f2)
-  params=(-D_SCHEDULE='0 */1 * * * ?' -D_SERVICEURL=$dhus1/odata/v1 -D_LABEL=$gapsynch \
+  params=(-D_SCHEDULE='0 */1 * * * ?' -D_SERVICEURL=$dhus1/odata/v1 -D_LABEL=$gapsync \
           -D_SERVICELOGIN=$user -D_SERVICEPASSWORD=$pass -D_PAGESIZE=2  -D_REQUEST=start \
           -D_LASTCREATIONDATE=$firstCreationdate -D_COPYPRODUCT=true -D_FILTERPARAM="$filter")
   # check if synchronizer exists
-  synchronizer=$(/usr/bin/wget -q -O - "$dhus2/odata/v1/Synchronizers/?\$format=text/csv&\$select=Id,Label,LastCreationDate,Status" |grep $gapsynch | tr -d '\r\n')
+  synchronizer=$(/usr/bin/wget -q -O - "$dhus2/odata/v1/Synchronizers/?\$format=text/csv&\$select=Id,Label,LastCreationDate,Status" |grep $gapsync | tr -d '\r\n')
   if [[ "$synchronizer" == "" ]]; then
-    log "create gap synchronizer $gapsynch with $filter"
+    log "create gap synchronizer $gapsync with $filter"
     m4 -D_ID="0L" "${params[@]}" synchronizer.m4 > $syncfile
     /usr/bin/wget -q -O - --method=POST --body-file=$syncfile \
-        --header "Content-Type:application/atom+xml" \
-        --header "Accept:application/atom+xml" \
+        --header "Content-Type:application/atom+xml" --header "Accept:application/atom+xml" \
         "$dhus2/odata/v1/Synchronizers" | xmllint --format -
   else
-    log "update gap synchronizer $gapsynch with $filter"
+    log "update gap synchronizer $gapsync with $filter"
     id=${synchronizer%%,*}
     m4 -D_ID="${id}L" "${params[@]}" synchronizer.m4 > $syncfile
     /usr/bin/wget -q -O - --method=PUT --body-file=$syncfile \
@@ -161,14 +163,14 @@ if [ $(cat $missing | wc -l) > 0 ]; then
 fi
 
 # wait for completion
-if [[ $wait == "true" ]]; then
-  synchronizer=$(/usr/bin/wget -q -O - "$dhus2/odata/v1/Synchronizers/?\$format=text/csv&\$select=Id,Label,LastCreationDate,Status" |grep $gapsynch | tr -d '\r\n')
+if [[ ($wait == "true") && $(cat $missing | wc -l) > 0 ]]; then
+  synchronizer=$(/usr/bin/wget -q -O - "$dhus2/odata/v1/Synchronizers/?\$format=text/csv&\$select=Id,Label,LastCreationDate,Status" |grep $gapsync | tr -d '\r\n')
   if [[ "$synchronizer" != "" ]]; then
     while [[ ("${synchronizer##*,}" != "STOPPED") && ("${synchronizer##*,}" != "ERROR") && $(echo $synchronizer | cut -d, -f3) < $lastCreationdate ]]; 
     do
       log "... waiting for $synchronizer to complete"  
       sleep 60;
-      synchronizer=$(/usr/bin/wget -q -O - "$dhus2/odata/v1/Synchronizers/?\$format=text/csv&\$select=Id,Label,LastCreationDate,Status" |grep $gapsynch | tr -d '\r\n')
+      synchronizer=$(/usr/bin/wget -q -O - "$dhus2/odata/v1/Synchronizers/?\$format=text/csv&\$select=Id,Label,LastCreationDate,Status" |grep $gapsync | tr -d '\r\n')
     done
     log "... completed $synchronizer"  
     id=${synchronizer%%,*}
@@ -176,7 +178,7 @@ if [[ $wait == "true" ]]; then
       log "... deleting $synchronizer"
       /usr/bin/wget -q -O - --method=DELETE "$dhus2/odata/v1/Synchronizers(${id})"
     else
-      log "stop $gapsynch"
+      log "stop $gapsync"
       params=(-D_REQUEST=stop)
       m4 -D_ID="${id}L" "${params[@]}" synchronizer.m4 > $syncfile
       /usr/bin/wget -q -O - --method=PUT --body-file=$syncfile \
@@ -184,7 +186,7 @@ if [[ $wait == "true" ]]; then
           "$dhus2/odata/v1/Synchronizers(${id})"
     fi
   else
-    logerr "cannot wait for unknown synchronizer $gapsynch"
+    logerr "cannot wait for unknown synchronizer $gapsync"
   fi
 fi
 
