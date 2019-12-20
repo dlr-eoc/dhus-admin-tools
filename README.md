@@ -56,6 +56,7 @@ Used internally by dhus-gapfill.sh to query the product list (catalogue view) fo
 * allow looping avor more than 10 products at once.
 * possibly reporting duplicates automatically into an EDR issue.
 * change to use curl instead of wget 1.19 (which requires .netrc formated credentials)
+* improve the queriy conditions for S3 and S5P NTC past day synchronization
 
 ## Change History
 2019-12-19 Initial commit
