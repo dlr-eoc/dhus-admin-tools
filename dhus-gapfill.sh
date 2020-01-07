@@ -89,10 +89,16 @@ if [ "$condition" == "" ]; then
   usage
   exit 1
 fi
-condition="$condition and CreationDate ge datetime'${queryDate}T00:00:00.000' and ContentDate/Start le datetime'${queryDate}T23:59:59.999'"
+# only data synchronized at day of interest or later
+condition="$condition and CreationDate ge datetime'${queryDate}T00:00:00.000'"
+# avoid overlap to data being synchronized at the moment (4 hours latency)
+##condition="$condition and CreationDate le datetime'$(date '+%Y-%m-%dT%H:%M:%S' --date='4 hours ago')'" 
+# only data for that day or earlier
+condition="$condition and ContentDate/Start le datetime'${queryDate}T23:59:59.999'"
 if [[ $dayonly == "true" ]]; then
-  condition="$condition and ContentDate/Start ge datetime'${queryDate}T00:00:00.000'" 
-  # otherwise also allows synchronizing gaps at earlier dates of data arriving the day before    
+  # only data for that specific day
+  condition="$condition and ContentDate/Start ge datetime'${queryDate}T00:00:00.000'"
+  # otherwise also allows synchronizing gaps at earlier dates of data arriving later
 fi
 log "Comparing with condition:"
 log "  $condition"
@@ -138,25 +144,25 @@ lastCreationdate=$(cut -d, -f4 $missing |sort -r |head -1 |tr -d '\n\r')
 export WGETRC=$rc2
 if [[ $(cat $missing | wc -l) > 0 ]]; then
   log "synchronizing $(cat $missing | wc -l) missing products"
-  filter=$(head $missing | cut -d, -f2 | xargs -n1 -I% echo -n "or Name eq '%' " | sed -e 's/^or /(/'; echo ')' )  
+  filter=$(cat $missing | cut -d, -f2 | xargs -n1 -I% echo -n "or Name eq '%' " | sed -e 's/^or /(/'; echo ')' )  
   user=$(grep user $rc1 | cut -d= -f2)
   pass=$(grep pass $rc1 | cut -d= -f2)
   params=(-D_SCHEDULE='0 */1 * * * ?' -D_SERVICEURL=$dhus1/odata/v1 -D_LABEL=$gapsync \
           -D_SERVICELOGIN=$user -D_SERVICEPASSWORD=$pass -D_PAGESIZE=2  -D_REQUEST=start \
           -D_LASTCREATIONDATE=$firstCreationdate -D_COPYPRODUCT=true -D_FILTERPARAM="$filter")
   # check if synchronizer exists
-  synchronizer=$(/usr/bin/wget -q -O - "$dhus2/odata/v1/Synchronizers/?\$format=text/csv&\$select=Id,Label,LastCreationDate,Status" |grep $gapsync | tr -d '\r\n')
+  synchronizer=$(wget -q -O - "$dhus2/odata/v1/Synchronizers/?\$format=text/csv&\$select=Id,Label,LastCreationDate,Status" |grep $gapsync | tr -d '\r\n')
   if [[ "$synchronizer" == "" ]]; then
     log "create gap synchronizer $gapsync with $filter"
     m4 -D_ID="0L" "${params[@]}" synchronizer.m4 > $syncfile
-    /usr/bin/wget -q -O - --method=POST --body-file=$syncfile \
+    wget -q -O - --method=POST --body-file=$syncfile \
         --header "Content-Type:application/atom+xml" --header "Accept:application/atom+xml" \
         "$dhus2/odata/v1/Synchronizers" | xmllint --format -
   else
     log "update gap synchronizer $gapsync with $filter"
     id=${synchronizer%%,*}
     m4 -D_ID="${id}L" "${params[@]}" synchronizer.m4 > $syncfile
-    /usr/bin/wget -q -O - --method=PUT --body-file=$syncfile \
+    wget -q -O - --method=PUT --body-file=$syncfile \
         --header "Content-Type:application/atom+xml" \
         "$dhus2/odata/v1/Synchronizers(${id})"
   fi
@@ -164,24 +170,24 @@ fi
 
 # wait for completion
 if [[ ($wait == "true") && $(cat $missing | wc -l) > 0 ]]; then
-  synchronizer=$(/usr/bin/wget -q -O - "$dhus2/odata/v1/Synchronizers/?\$format=text/csv&\$select=Id,Label,LastCreationDate,Status" |grep $gapsync | tr -d '\r\n')
+  synchronizer=$(wget -q -O - "$dhus2/odata/v1/Synchronizers/?\$format=text/csv&\$select=Id,Label,LastCreationDate,Status" |grep $gapsync | tr -d '\r\n')
   if [[ "$synchronizer" != "" ]]; then
     while [[ ("${synchronizer##*,}" != "STOPPED") && ("${synchronizer##*,}" != "ERROR") && $(echo $synchronizer | cut -d, -f3) < $lastCreationdate ]]; 
     do
       log "... waiting for $synchronizer to complete"  
       sleep 60;
-      synchronizer=$(/usr/bin/wget -q -O - "$dhus2/odata/v1/Synchronizers/?\$format=text/csv&\$select=Id,Label,LastCreationDate,Status" |grep $gapsync | tr -d '\r\n')
+      synchronizer=$(wget -q -O - "$dhus2/odata/v1/Synchronizers/?\$format=text/csv&\$select=Id,Label,LastCreationDate,Status" |grep $gapsync | tr -d '\r\n')
     done
     log "... completed $synchronizer"  
     id=${synchronizer%%,*}
     if [[ "$remove" == "true" ]]; then
       log "... deleting $synchronizer"
-      /usr/bin/wget -q -O - --method=DELETE "$dhus2/odata/v1/Synchronizers(${id})"
+      wget -q -O - --method=DELETE "$dhus2/odata/v1/Synchronizers(${id})"
     else
       log "stop $gapsync"
       params=(-D_REQUEST=stop)
       m4 -D_ID="${id}L" "${params[@]}" synchronizer.m4 > $syncfile
-      /usr/bin/wget -q -O - --method=PUT --body-file=$syncfile \
+      wget -q -O - --method=PUT --body-file=$syncfile \
           --header "Content-Type:application/atom+xml" \
           "$dhus2/odata/v1/Synchronizers(${id})"
     fi

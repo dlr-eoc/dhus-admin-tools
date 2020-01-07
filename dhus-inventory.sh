@@ -69,7 +69,7 @@ odataQuery="\$top=$batchsize&\$select=$select&\$format=text/csv&\$orderby=Creati
 pos=0
 while [ $pos -le $limit ]
 do
-  lines=( $(/usr/bin/wget -q -O - "$dhusUrl/odata/v1/Products/?$skip$odataQuery" ) )
+  lines=( $(wget -q -O - "$dhusUrl/odata/v1/Products/?$skip$odataQuery" ) )
   status=${PIPESTATUS[0]}
   if [ $status != 0 ]; then
     >2& echo "query failed with status=$status"  
