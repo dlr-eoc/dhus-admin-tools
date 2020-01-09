@@ -182,7 +182,7 @@ fi
 if [[ ($wait == "true") && $(cat $missing | wc -l) > 0 ]]; then
   synchronizer=$(wget -q -O - "$dhus2/odata/v1/Synchronizers/?\$format=text/csv&\$select=Id,Label,LastCreationDate,Status" |grep $gapsync | tr -d '\r\n')
   if [[ "$synchronizer" != "" ]]; then
-    while [[ ("${synchronizer##*,}" != "STOPPED") && ("${synchronizer##*,}" != "ERROR") && $(echo $synchronizer | cut -d, -f3) < $lastCreationdate ]]; 
+    while [[ ("${synchronizer##*,}" != "STOPPED") && ("${synchronizer##*,}" != "ERROR") && ("${synchronizer##*,}" != "UNKNOWN") && $(echo $synchronizer | cut -d, -f3) < $lastCreationdate ]]; 
     do
       log "... waiting for $synchronizer to complete"  
       sleep 60;
