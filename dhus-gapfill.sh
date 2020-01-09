@@ -4,7 +4,7 @@ export TZ=UTC
 function usage {
   >&2 echo "This script will compare the products ingested for one day in two DataHubs and will "
   >&2 echo "USAGE:"
-  >&2 echo "$0 -c|--condition=... --dhus1=$dhus1 --rc1=/path/to/.wgetrc1 --dhus2=$dhus2 --rc2=/path/to/.wgetrc2 [-d|date=$queryDate] [-g|--name=gap-synchronizer-name] [-k|--keeplists] [-w|--wait] [-r|--remove]"
+  >&2 echo "$0 -c|--condition=... --dhus1=$dhus1 --rc1=/path/to/.wgetrc1 --dhus2=$dhus2 --rc2=/path/to/.wgetrc2 [-d|date=$queryDate] [-g|--name=gap-synchronizer-name] [-s|--batchSize=100] [-m|--metadata] [-k|--keeplists] [-w|--wait] [-r|--remove]"
   >&2 echo "  --condition is the full OData query, examples for each sentinel mission:"
   >&2 echo "    -c=\"startswith(Name,'S1') and not substringof('_RAW_',Name)\""
   >&2 echo "    -c=\"startswith(Name,'S2') and substringof('_MSIL1C_',Name)\""
@@ -14,6 +14,8 @@ function usage {
   >&2 echo "  --dhus1 and --dhus2 specify the base URLs of the datahub services"
   >&2 echo "  --rc1 and --rc2 specify the paths to the WGETRC files with user=xxx and password=yyy of the DHuS service accounts"
   >&2 echo "  -g|--name of the synchronizer used to fill the gaps"
+  >&2 echo "  --batchsize NUMBER to set the query batch size" 
+  >&2 echo "  --metadata only without product copy (default is to copy)   
   >&2 echo "  --wait for completion"
   >&2 echo "  --remove synchronizer after completion (implicit --wait)"
   >&2 echo "  --keep identifier lists after completion" 
@@ -33,6 +35,7 @@ dayonly=false
 batchsize=100
 wait=false;
 remove=false;
+copyproduct=true;
 gapsync="_gap_sync"
 keeplists=false
 
@@ -45,6 +48,7 @@ while [ "$#" -gt 0 ]; do
     --dhus2)        dhus2="$2"; shift 2;;
     --rc1)          rc1="$2"; shift 2;;
     --rc2)          rc2="$2"; shift 2;;
+    --batchSize)    batchsize="$2"; shift 2;;
 
     -c=*|--condition=*) condition="${1#*=}"; shift 1;;
     -d=*|--queryDate=*) queryDate="${1#*=}"; dayonly=true; shift 1;;
@@ -53,7 +57,9 @@ while [ "$#" -gt 0 ]; do
     --dhus2=*)      dhus2="${1#*=}"; shift 1;;
     --rc1=*)        rc1="${1#*=}"; shift 1;;
     --rc2=*)        rc2="${1#*=}"; shift 1;;
+    --batchSize=*)  batchsize="${1#*=}"; shift 1;;
 
+    -m|--metadata)  copyproduct=false; shift 1;;
     -w|--wait)      wait=true; shift 1;;
     -r|--remove)    remove=true; wait=true; shift 1;;
     -k|--keeplists) keep=true; shift 1;;
@@ -149,7 +155,7 @@ if [[ $(cat $missing | wc -l) > 0 ]]; then
   pass=$(grep pass $rc1 | cut -d= -f2)
   params=(-D_SCHEDULE='0 */1 * * * ?' -D_SERVICEURL=$dhus1/odata/v1 -D_LABEL=$gapsync \
           -D_SERVICELOGIN=$user -D_SERVICEPASSWORD=$pass -D_PAGESIZE=2  -D_REQUEST=start \
-          -D_LASTCREATIONDATE=$firstCreationdate -D_COPYPRODUCT=true -D_FILTERPARAM="$filter")
+          -D_LASTCREATIONDATE=$firstCreationdate -D_COPYPRODUCT=$copyproduct -D_FILTERPARAM="$filter")
   # check if synchronizer exists
   synchronizer=$(wget -q -O - "$dhus2/odata/v1/Synchronizers/?\$format=text/csv&\$select=Id,Label,LastCreationDate,Status" |grep $gapsync | tr -d '\r\n')
   if [[ "$synchronizer" == "" ]]; then
