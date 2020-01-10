@@ -68,7 +68,7 @@ odataQuery="\$top=$batchsize${select:+&\$select=$select}&\$format=text/csv&\$ord
 pos=0
 while [ $pos -le $limit ]
 do
-  lines=( "$(wget -q -O - "$dhusUrl/odata/v1/DeletedProducts/?$skip$odataQuery" )" )
+  readarray -t lines < <(wget -q -O - "$dhusUrl/odata/v1/DeletedProducts/?$skip$odataQuery" )
   status=${PIPESTATUS[0]}
   if [ $status != 0 ]; then
     >2& echo "query failed with status=$status"  
