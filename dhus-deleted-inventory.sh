@@ -20,10 +20,8 @@ function usage {
   >&2 echo "Result is ordered by CreationDate to ensure linear sequence"
   >&2 echo "Output is sent to stdout in the CSV format with header."
   >&2 echo ""
-  >&2 echo "Example to retrieve all deleted products, avoiding old S2 product formats, number each line and unwrap message lines:"
-  >&2 echo -n "./dhus-deleted-inventory.sh -w=.apihubrc -l=2000000000 -b=100 -c="not substringof('_OPER_PRD_MSIL1C_PDMC_',Name)" | awk '"
-  >&2 echo -n '/,S2/{printf "%s,",NR} /,MD5,/{print $0; next} /"[^"]+$/{printf "%s ",$0;next} /^[^,]+$/{printf "%s ",$0;next} 1'
-  >&2 echo    "' | sed -e 's/ ",MD5,/",MD5,/'"
+  >&2 echo "Example to retrieve all deleted products avoiding old S2 product formats:"
+  >&2 echo "  ./dhus-deleted-inventory.sh -w=.apihubrc -l=2000000000 -b=100 -c=\"not substringof('_OPER_PRD_MSIL1C_PDMC_',Name)\""
   >&2 echo ""
   exit 1;
 }
@@ -70,7 +68,7 @@ odataQuery="\$top=$batchsize${select:+&\$select=$select}&\$format=text/csv&\$ord
 pos=0
 while [ $pos -le $limit ]
 do
-  lines=( $(wget -q -O - "$dhusUrl/odata/v1/DeletedProducts/?$skip$odataQuery" ) )
+  lines=( "$(wget -q -O - "$dhusUrl/odata/v1/DeletedProducts/?$skip$odataQuery" )" )
   status=${PIPESTATUS[0]}
   if [ $status != 0 ]; then
     >2& echo "query failed with status=$status"  
