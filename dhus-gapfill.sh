@@ -103,12 +103,16 @@ fi
 condition="$condition and CreationDate ge datetime'${queryDate}T00:00:00.000'"
 # avoid overlap to data being synchronized at the moment (4 hours latency)
 ##condition="$condition and CreationDate le datetime'$(date '+%Y-%m-%dT%H:%M:%S' --date='4 hours ago')'" 
-# only data for that day or earlier
-condition="$condition and ContentDate/Start le datetime'${queryDate}T23:59:59.999'"
 if [[ $dayonly == "true" ]]; then
   # only data for that specific day
-  condition="$condition and ContentDate/Start ge datetime'${queryDate}T00:00:00.000'"
-  # otherwise also allows synchronizing gaps at earlier dates of data arriving later
+  condition="$condition and ContentDate/Start le datetime'${queryDate}T23:59:59.999'"
+  condition1="$condition and ContentDate/Start ge datetime'${queryDate}T00:00:00.000'"
+  condition2="$condition1"
+else
+  # otherwise synchronize gaps for products synchronized at the source in the past day
+  condition1="$condition and CreationDate le datetime'${queryDate}T23:59:59.999'"
+  # on the local hub take last day until now
+  condition2="$condition"
 fi
 log "Comparing with condition:"
 log "  $condition"
@@ -116,13 +120,13 @@ log "  $condition"
 # retrieve daily inventory from dhus1
 log "... reading daily inventory from $dhus1"
 SECONDS=0
-./dhus-inventory.sh -c="$condition" -b=$batchsize -u="$dhus1" -w="$rc1" --select="Id,Name,ContentLength,CreationDate" > $list1
+./dhus-inventory.sh -c="$condition1" -b=$batchsize -u="$dhus1" -w="$rc1" --select="Id,Name,ContentLength,CreationDate" > $list1
 log "... daily inventory from $dhus1 has $(cat $list1 | wc -l) products in $SECONDS seconds"
 
 # retrieve daily inventory from dhus2
 log "... reading daily inventory from $dhus2"
 SECONDS=0
-./dhus-inventory.sh -c="$condition" -b=$batchsize -u="$dhus2" -w="$rc2" --select="Id,Name,ContentLength,CreationDate" > $list2   
+./dhus-inventory.sh -c="$condition2" -b=$batchsize -u="$dhus2" -w="$rc2" --select="Id,Name,ContentLength,CreationDate" > $list2   
 log "... daily inventory from $dhus2 has $(cat $list2 | wc -l) products in $SECONDS seconds"
 
 # check for duplicates
@@ -182,10 +186,11 @@ fi
 if [[ ($wait == "true") && $(cat $missing | wc -l) > 0 ]]; then
   synchronizer=$(wget -q -O - "$dhus2/odata/v1/Synchronizers/?\$format=text/csv&\$select=Id,Label,LastCreationDate,Status" |grep $gapsync | tr -d '\r\n')
   if [[ "$synchronizer" != "" ]]; then
-    while [[ ("${synchronizer##*,}" != "STOPPED") && ("${synchronizer##*,}" != "ERROR") && ("${synchronizer##*,}" != "UNKNOWN") && $(echo $synchronizer | cut -d, -f3) < $lastCreationdate ]]; 
+    loopcount=0
+    while [[ ($((loopcount++)) -lt 60) && ("${synchronizer##*,}" != "STOPPED") && ("${synchronizer##*,}" != "ERROR") && ("${synchronizer##*,}" != "UNKNOWN") && $(echo $synchronizer | cut -d, -f3) < $lastCreationdate ]]; 
     do
-      log "... waiting for $synchronizer to complete"  
-      sleep 60;
+      log "... $loopcount waiting for $synchronizer to complete"  
+      sleep 60
       synchronizer=$(wget -q -O - "$dhus2/odata/v1/Synchronizers/?\$format=text/csv&\$select=Id,Label,LastCreationDate,Status" |grep $gapsync | tr -d '\r\n')
     done
     log "... completed $synchronizer"  
