@@ -4,22 +4,24 @@ export TZ=UTC
 function usage {
   >&2 echo "This script will compare the products ingested for one day in two DataHubs and will "
   >&2 echo "USAGE:"
-  >&2 echo "$0 -c|--condition=... --dhus1=$dhus1 --rc1=/path/to/.wgetrc1 --dhus2=$dhus2 --rc2=/path/to/.wgetrc2 [-d|date=$queryDate] [-g|--name=gap-synchronizer-name] [-s|--batchSize=100] [-p|--pagesize=2] [-m|--metadata] [-k|--keeplists] [-w|--wait] [-r|--remove]"
+  >&2 echo "$0 -c=... --dhus1=$dhus1 --rc1=/path/to/.wgetrc1 --dhus2=$dhus2 --rc2=/path/to/.wgetrc2 [-d=$queryDate] [-a=$maxAge] [-g=$gapsync] [-s=$batchsize] [-p=$pagesize] [-l=$limit] [-m] [-k] [-w] [-r]"
   >&2 echo "  --condition is the full OData query, examples for each sentinel mission:"
   >&2 echo "    -c=\"startswith(Name,'S1') and not substringof('_RAW_',Name)\""
   >&2 echo "    -c=\"startswith(Name,'S2') and substringof('_MSIL1C_',Name)\""
   >&2 echo "    -c=\"startswith(Name,'S3') and (substringof('_OL_',Name) or substringof('_SL_',Name) or substringof('_SR_',Name))\""
   >&2 echo "    -c=\"startswith(Name,'S5') and substringof('_L2_',Name)\""
-  >&2 echo "  --queryDate YYYY-MM-DD for the gap search, searches between creationDate > DATE and aquisitionDate < DATE+1day (default is yesterday)"
+  >&2 echo "  -d|--queryDate YYYY-MM-DD for the gap search, searches between creationDate > DATE and aquisitionDate < DATE+1day (default is yesterday)"
+  >&2 echo "  -a|--maxAge DD to avoid pulling reprocessed data (default is $maxAge days)"
   >&2 echo "  --dhus1 and --dhus2 specify the base URLs of the datahub services"
-  >&2 echo "  --rc1 and --rc2 specify the paths to the WGETRC files with user=xxx and password=yyy of the DHuS service accounts"
+  >&2 echo "  --rc1 and --rc2 specify the paths to the WGETRC files containing user=xxx and password=yyy of the DHuS service accounts"
   >&2 echo "  -g|--name of the synchronizer used to fill the gaps"
-  >&2 echo "  --batchsize NUMBER to set the query batch size (default is $batchsize)"
-  >&2 echo "  --pagesize NUMBER to set the transfer page size (default is $pagesize)"
-  >&2 echo "  --metadata only without product copy (default is to copy)"   
-  >&2 echo "  --wait for completion"
-  >&2 echo "  --remove synchronizer after completion (implicit --wait)"
-  >&2 echo "  --keep identifier lists after completion" 
+  >&2 echo "  -s|--batchsize NUMBER to set the query batch size (default is $batchsize)"
+  >&2 echo "  -p|--pagesize NUMBER to set the transfer page size (default is $pagesize)"
+  >&2 echo "  -l|--limit NUMBER to limit the amount of products to query in synchronizer (default is $limit)"
+  >&2 echo "  -m|--metadata only without product copy (default is to copy)"   
+  >&2 echo "  -w|--wait for completion"
+  >&2 echo "  -r|--remove synchronizer after completion (implicit --wait)"
+  >&2 echo "  -k|--keep identifier lists after completion" 
   >&2 echo ""
   exit 1;
 }
@@ -32,9 +34,11 @@ rc1=.wgetrc1
 dhus2="http://localhost:8080"
 rc2=.wgetrc2
 queryDate="$(date +%Y-%m-%d --date='1 day ago')"
+maxAge=30
 dayonly=false
 batchsize=100
 pagesize=2
+limit=30
 wait=false;
 remove=false;
 copyproduct=true;
@@ -45,6 +49,7 @@ while [ "$#" -gt 0 ]; do
   case "${1,,}" in
     -c|--condition) condition="$2"; shift 2;;
     -d|--querydate) queryDate="$2"; shift 2;;
+    -a|--maxAge)    maxAge="$2"; shift 2;;
     -g|--name)      gapsync="$2"; shift 2;;
     --dhus1)        dhus1="$2"; shift 2;;
     --dhus2)        dhus2="$2"; shift 2;;
@@ -55,14 +60,15 @@ while [ "$#" -gt 0 ]; do
 
     -c=*|--condition=*) condition="${1#*=}"; shift 1;;
     -d=*|--querydate=*) queryDate="${1#*=}"; dayonly=true; shift 1;;
+    -a=*|--maxAge=*)    maxAge="${1#*=}"; shift 1;;
     -g=*|--name=*)  gapsync="${1#*=}"; shift 1;;
     --dhus1=*)      dhus1="${1#*=}"; shift 1;;
     --dhus2=*)      dhus2="${1#*=}"; shift 1;;
     --rc1=*)        rc1="${1#*=}"; shift 1;;
     --rc2=*)        rc2="${1#*=}"; shift 1;;
-    --batchsize=*)  batchsize="${1#*=}"; shift 1;;
-    --pagesize=*)   pagesize="${1#*=}"; shift 1;;
-
+    -s=*|--batchsize=*) batchsize="${1#*=}"; shift 1;;
+    -p=*|--pagesize=*)  pagesize="${1#*=}"; shift 1;;
+    -l=*|--limit=*)     limit="${1#*=}"; shift 1;;
     -m|--metadata)  copyproduct=false; shift 1;;
     -w|--wait)      wait=true; shift 1;;
     -r|--remove)    remove=true; wait=true; shift 1;;
@@ -111,6 +117,9 @@ if [[ $dayonly == "true" ]]; then
 else
   # otherwise synchronize gaps for products synchronized at the source in the past day
   condition1="$condition and CreationDate le datetime'${queryDate}T23:59:59.999'"
+  # only newer data
+  maxDate="$(date +%Y-%m-%d --date=$maxAge' days ago')"
+  condition1="$condition1 and ContentDate/Start ge datetime'${maxDate}T00:00:00.000'"
   # on the local hub take last day until now
   condition2="$condition"
 fi
@@ -149,16 +158,16 @@ grep -Ff <(comm -23 $ids1 $ids2) $list1 > $missing
 
 # process missing files
 log "Missing $(cat $missing | wc -l) products"
-head $missing
+head -$limit $missing
 
 # date range of products to retrieve
 firstCreationdate="$(cut -d, -f4 $missing |sort |head -1 | cut -dT -f1)T00:00:00.000"
-lastCreationdate=$(cut -d, -f4 $missing |sort -r |head -1 |tr -d '\n\r')
+lastCreationdate=$(cut -d, -f4 $missing |sort -r |head -$limit |head -1 |tr -d '\n\r')
 
 export WGETRC=$rc2
 if [[ $(cat $missing | wc -l) > 0 ]]; then
-  log "synchronizing $(cat $missing | wc -l) missing products"
-  filter=$(cat $missing | cut -d, -f2 | xargs -n1 -I% echo -n "or Name eq '%' " | sed -e 's/^or /(/'; echo ')' )  
+  log "synchronizing $(cat $missing | head -$limit | wc -l) missing products"
+  filter=$(cat $missing | cut -d, -f2 | head -$limit | xargs -n1 -I% echo -n "or Name eq '%' " | sed -e 's/^or /(/'; echo ')' )  
   user=$(grep user $rc1 | cut -d= -f2)
   pass=$(grep pass $rc1 | cut -d= -f2)
   params=(-D_SCHEDULE='0 */1 * * * ?' -D_SERVICEURL=$dhus1/odata/v1 -D_LABEL=$gapsync \
