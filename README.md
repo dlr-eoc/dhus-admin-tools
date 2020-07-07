@@ -25,19 +25,26 @@ The script is intended to be run in a cronjob to complete any misses in the prev
 ```
 USAGE:
 
-./dhus-gapfill.sh -c|--condition=... --dhus1=https://scihub.copernicus.eu/apihub --rc1=/path/to/.wgetrc1 --dhus2=http://localhost:8080 --rc2=/path/to/.wgetrc2 [-d|queryDate=2019-12-18] [-g|--name=gap-synchronizer-name] [-q|--quiet] [-w|--wait] [-r|--remove]
+./dhus-gapfill.sh -c=... --dhus1=https://scihub.copernicus.eu/apihub --rc1=/path/to/.wgetrc1 --dhus2=http://localhost:8080 --rc2=/path/to/.wgetrc2 [-d=2020-07-06] [-a=30] [-g=_gap_sync] [-s=100] [-p=2] [-l=30] [-m] [-k] [-w] [-r]
   --condition is the full OData query, examples for each sentinel mission:
     -c="startswith(Name,'S1') and not substringof('_RAW_',Name)"
     -c="startswith(Name,'S2') and substringof('_MSIL1C_',Name)"
     -c="startswith(Name,'S3') and (substringof('_OL_',Name) or substringof('_SL_',Name) or substringof('_SR_',Name))"
     -c="startswith(Name,'S5') and substringof('_L2_',Name)"
-  --queryDate YYYY-MM-DD for the gap search, searches between creationDate > DATE and aquisitionDate < DATE+1day (default is yesterday)
+  -d|--queryDate YYYY-MM-DD for the gap search, searches between creationDate > DATE and aquisitionDate < DATE+1day (default is yesterday)
+  -a|--maxAge DD to avoid pulling reprocessed data (default is 30 days)
   --dhus1 and --dhus2 specify the base URLs of the datahub services
-  --rc1 and --rc2 specify the paths to the WGETRC files with user=xxx and password=yyy of the DHuS service accounts
-  -g|--name of the synchronizer to be (re-)used to fill the gaps
-  --wait for completion
-  --remove synchronizer after completion (implicit --wait)
-  --quiet avoids progress output to stderr
+  --rc1 and --rc2 specify the paths to the WGETRC files containing user=xxx and password=yyy of the DHuS service accounts
+  -g|--name of the synchronizer used to fill the gaps
+  -s|--batchsize NUMBER to set the query batch size (default is 100)
+  -p|--pagesize NUMBER to set the transfer page size (default is 2)
+  -l|--limit NUMBER to limit the amount of products to query in synchronizer (default is 30)
+  -m|--metadata only without product copy (default is to copy)
+  -w|--wait for completion
+  -r|--remove synchronizer after completion (implicit --wait)
+  -k|--keep identifier lists after completion
+
+2020-07-07T12:48:39Z INFO dhus-gapfill.sh cleanup
 ```
 
 #### Example
@@ -52,13 +59,12 @@ Used internally by dhus-gapfill.sh to query the product list (catalogue view) fo
 
 ### TODO
 
-* refactor-out the schnronizer part into its own script, such that it can be fed with a catalogview in csv list.
-* allow looping avor more than 10 products at once.
+* refactor-out the synchnronizer part into its own script, such that it can be fed with a catalogview in csv list.
 * possibly reporting duplicates automatically into an EDR issue.
 * change to use curl instead of wget 1.19 (which requires .netrc formated credentials)
-* improve the queriy conditions for S3 and S5P NTC past day synchronization
 
 ## Change History
+2020-07-07 Added past day gap synchronization and parameters --maxAge and --limit
 2019-12-19 Initial commit
 
 
